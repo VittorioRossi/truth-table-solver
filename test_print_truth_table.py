@@ -19,6 +19,8 @@ def print_truth_table(declared_vars, assignments, show_instructions, output_file
                 f.write("# " + header + "\n")
                 f.write("# " + "-" * len(header) + "\n")
 
+            
+
                 # Generate all possible combinations of truth values
                 n = len(declared_vars)
                 for i in range(2**n):

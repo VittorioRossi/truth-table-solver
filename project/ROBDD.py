@@ -23,6 +23,10 @@ class Node:
     def is_terminal(self):
         return self.low is None and self.high is None
 
+    def __repr__(self):
+        return f"Node({self.var})"
+    
+
 def op_not(x, y):
     return '1' if x == '0' else '0'
 
@@ -154,13 +158,68 @@ class ROBDD:
 
     def __call__(self, var_assignment):
         node = self.root
+        get = var_assignment.get
         while not node.is_terminal():
-            if var_assignment.get(node.var, False):
-                node = node.high
+            # extract what the assigned value for the current node is
+            if get(node.var):
+                node = node.high # go to the high branch if the value is True
             else:
                 node = node.low
-        return int(node.var)
+        return node.var
     
+    def find_paths_to_one(self, node, path=None, assignments=None):
+        if path is None:
+            path = []
+        if assignments is None:
+            assignments = []
+        
+        if node is None:
+            return assignments
+
+        if node.var == 1:
+            # We've reached a terminal 1 node, add this path to assignments
+            assignments.append(path)
+            return assignments
+        elif node.var == 0:
+            # We've reached a terminal 0 node, this path doesn't lead to 1
+            return assignments
+        
+        # Recursive case: non-terminal node
+        # Follow high branch (var = True)
+        self.find_paths_to_one(node.high, path + [(node.var, True)], assignments)
+        
+        # Follow low branch (var = False)
+        self.find_paths_to_one(node.low, path + [(node.var, False)], assignments)
+        
+        return assignments
+    
+    def show_ones(self, declared_vars):
+        """
+        Generate truth table rows for satisfying assignments.
+        """
+        satisfying_assignments = self.find_paths_to_one(self.root)
+        print(f"Number of satisfying assignments: {len(satisfying_assignments)}")
+        print("Satisfying assignments:")
+        for assignment in satisfying_assignments:
+            print(assignment)
+
+        rows = []
+        for assignment in satisfying_assignments:
+            row = [str(int(assignment.get(var, False))) for var in declared_vars]
+            rows.append(" ".join(row))
+        
+        return rows
+    
+    def print_robdd(self):
+        print("ROBDD:")
+        def print_recursive(node, indent=0):
+            print("  " * indent + str(node))
+            if not node.is_terminal():
+                print_recursive(node.low, indent + 1)
+                print_recursive(node.high, indent + 1)
+
+        print_recursive(self.root)
+
 
 if __name__=="__main__":
     test_case_4 = ('or', 'x', 'y', 'z')
@@ -169,3 +228,5 @@ if __name__=="__main__":
     #print("Test Case 4:", test_case_4)
     robdd = ROBDD()
     robdd.build(test_case_4, variables_4)
+    robdd.show_ones(variables_4)
+    robdd.print_robdd()
