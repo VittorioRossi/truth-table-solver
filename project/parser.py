@@ -1,5 +1,5 @@
 from pprint import pprint
-from tokenizer import Tokenizer
+from project.tokenizer import Tokenizer
 from typing import List, Tuple, Any, Dict
 
 def match(token, type, value = None):

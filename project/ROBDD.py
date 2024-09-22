@@ -1,13 +1,10 @@
 from functools import lru_cache
 from time import time
-from operator import and_, or_
 
 # Define constants for operators
 OP_NOT = 'not'
 OP_AND = 'and'
 OP_OR = 'or'
-
-
 
 class Node:
     _id_counter = 0
@@ -26,10 +23,6 @@ class Node:
     def is_terminal(self):
         return self.low is None and self.high is None
 
-#    def __repr__(self):
-#        if self.is_terminal():
-#            return f"Node({self.var})"
-#        return f"Node({self.var}, {self.low}, {self.high})"
 def op_not(x, y):
     return '1' if x == '0' else '0'
 

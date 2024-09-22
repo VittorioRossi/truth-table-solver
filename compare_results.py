@@ -15,6 +15,10 @@ def compare_truth_tables(table1, table2):
     if len(table1) != len(table2):
         return False
     
+    # sort the rows of the tables to compare them
+    table1 = sorted(table1)
+    table2 = sorted(table2)
+
     for row1, row2 in zip(table1, table2):
         if row1 != row2:
             return False
