@@ -3,9 +3,9 @@ hw01_outputs
 hw01_vezzo
 profiling
 old
-*/tempCodeRunnerFile.py
-*/__pycache__
-*/.ipynb_checkpoints
-*/.vscode
-*/.pytest
-*/.pytest
+tempCodeRunnerFile.py
+__pycache__
+.ipynb_checkpoints
+.vscode
+.pytest
+.pytest
