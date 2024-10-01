@@ -131,7 +131,7 @@ class TestParser(unittest.TestCase):
             parse(content)
 
     def test_valid_not_expression(self):
-        content = "var x y; z = not x and y;"
+        content = "var x y; z = (not x) and y;"
         _, assignments, _ = parse(content)
         expected = {'z': ('and', ('not', 'x'), 'y')}
         self.assertEqual(assignments, expected)

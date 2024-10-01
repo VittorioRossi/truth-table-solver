@@ -2,6 +2,7 @@ import sys
 from project.runner import CodeInterpreter
 
 def main(file_path):
+
     CodeInterpreter(file_path).interpet()
     
 

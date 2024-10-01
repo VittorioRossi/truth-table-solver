@@ -1,5 +1,6 @@
 from pprint import pprint
 from project.tokenizer import Tokenizer
+#from tokenizer import Tokenizer
 from typing import List, Tuple, Dict, Any
 
 def match(token, type, value = None):
@@ -20,13 +21,14 @@ def tokens_to_robdd_input(tokens: List, start_index: int = 0, open_parentheses =
     Allows multiple operators within the same parenthesis level.
     Detects and reports errors for incorrect parentheses usage.
     
-    Example of valid input: ((x1 or x2) and (not x3)) or x4
+    Example of valid input: ((x1 or x2) and (not x3)) and x4 and (not (y))
     """
     i = start_index
     expression: List = []
     current_term: List = []
     last_operator = None
     expect_operator = False
+
 
     def finalize_term():
         nonlocal current_term, expect_operator
@@ -36,6 +38,7 @@ def tokens_to_robdd_input(tokens: List, start_index: int = 0, open_parentheses =
             expression.extend(current_term)
         current_term = []
         expect_operator = True
+        
 
     while i < len(tokens):
         token = tokens[i]
@@ -63,39 +66,46 @@ def tokens_to_robdd_input(tokens: List, start_index: int = 0, open_parentheses =
         
         elif match(token, 'KEYWORD', 'not'):
             
-            # Check if 'not' is followed by an identifier or a parenthesis
-            if expect_operator:
-                raise ValueError(f"Unexpected 'not' at line {token.line + 1}, character {token.column+1}. Did you forget an operator?")
-            
             if last_operator and last_operator != 'not':
                 raise ValueError(f"Unexpected 'not' at line {token.line + 1}, character {token.column+1}. Expected '{last_operator}'")
-
-            # now we are at the current not, let's check if there are more nots
-            # Count the number of 'not' keywords
-            not_count = 1
-            while i + 1 < len(tokens) and match(tokens[i+1], 'KEYWORD', 'not'):
-                not_count += 1 # add a 'not'
-                i += 1 # move to the next token
-
-            next_token = tokens[i+1] if i+1 < len(tokens) else None
             
-            if next_token and match(next_token, 'SPECIAL', '('):
-                sub_expression, i = tokens_to_robdd_input(tokens, i + 1, open_parentheses)
 
-            elif match(next_token, 'IDENTIFIER') or match_bool(next_token):
-                sub_expression = next_token.value
-                i += 1
-            else:
-                # Unexpected token after 'not'
-                raise ValueError(f"Unexpected token after 'not' at line {next_token.line + 1}, character {next_token.column+1}")
-                
-            if not_count % 2 == 1:
-                # Apply the 'not' operator to the sub-expression if the count is odd
-                sub_expression = ('not', sub_expression)
+            if expect_operator:
+                raise ValueError(f"Unexpected 'not' at line {token.line + 1}, character {token.column+1}. Did you forget an identifier?")
+            
+            if last_operator == 'not':
+                last_operator = None
+            else: 
+                last_operator = 'not'
+            expect_operator = False
+            
 
-            # Append the sub-expression to the current term
-            current_term.append(sub_expression)
-            expect_operator = True # We have parser the whole assignment after not therefore we expect an operator
+            ## now we are at the current not, let's check if there are more nots
+            ## Count the number of 'not' keywords
+            #not_count = 1
+            #while i + 1 < len(tokens) and match(tokens[i+1], 'KEYWORD', 'not'):
+            #    not_count += 1 # add a 'not'
+            #    i += 1 # move to the next token
+#
+            #next_token = tokens[i+1] if i+1 < len(tokens) else None
+            #
+            #if next_token and match(next_token, 'SPECIAL', '('):
+            #    sub_expression, i = tokens_to_robdd_input(tokens, i + 2, open_parentheses)
+#
+            #elif match(next_token, 'IDENTIFIER') or match_bool(next_token):
+            #    sub_expression = next_token.value
+            #    i += 1
+            #else:
+            #    # Unexpected token after 'not'
+            #    raise ValueError(f"Unexpected token after 'not' at line {next_token.line + 1}, character {next_token.column+1}")
+            #    
+            #if not_count % 2 == 1:
+            #    # Apply the 'not' operator to the sub-expression if the count is odd
+            #    sub_expression = ('not', sub_expression)
+#
+            ## Append the sub-expression to the current term
+            #current_term.append(sub_expression)
+            #expect_operator = True # We have parser the whole assignment after not therefore we expect an operator
 
         elif match(token, 'KEYWORD', 'or') or match(token, 'KEYWORD', 'and'):
             if not expect_operator:
@@ -140,6 +150,8 @@ def tokens_to_robdd_input(tokens: List, start_index: int = 0, open_parentheses =
         raise ValueError(f"Incomplete expression: missing operand at the end")
 
     finalize_term()
+
+    # adjust not count
     
     if last_operator:
         return (last_operator,) + tuple(expression), i
@@ -239,12 +251,13 @@ def parse(file) -> Tuple[List[str], Dict[str, Tuple], List[Tuple[str, List]]]:
 if __name__ == "__main__":
     with open('./hw01_instances/random0000.txt', 'r') as file:
         text = file.read()
-    text = """# We declare two variables: x and y
-    var a b c d e f g h i;
-    # We assign (x xor y) to z
-    z =  b or ((a or b) and c) and h;
-    # We show the truth table of z
-    show z;"""
+    #text = """# We declare two variables: x and y
+    #var a b c d e f g h i;
+    ## We assign (x xor y) to z
+    #z =  b or ((a or b) and c) and h;
+    ## We show the truth table of z
+    #show z;"""
+    text = """var x y; z = not not (x);"""
     variables, assignments, show_instructions = parse(text)
     pprint(variables)
     pprint(assignments)
