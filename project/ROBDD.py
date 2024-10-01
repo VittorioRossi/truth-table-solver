@@ -1,4 +1,5 @@
 from functools import lru_cache
+from itertools import product
 from typing import List
 # Define constants for operators
 OP_NOT = 'not'
@@ -34,7 +35,7 @@ class Node:
 
 
 class ROBDD:
-    __slots__ = ['root', 'variables', 'operation_cache', 'unique_table']
+    __slots__ = ['root', 'variables', 'operation_cache', 'unique_table', 'variable_indices']
 
     def __init__(self):
         self.root: Node = None
@@ -48,10 +49,13 @@ class ROBDD:
         self.operation_cache = {}
         self.unique_table = {}
 
+        self.variable_indices = {}  # New dictionary to store variable indices
+
 
     def build(self, expression, variables, reduce=True):
         self.clear()
-        self.variables = variables
+        self.variables = list(variables)  # Store variables in the original order
+        self.variable_indices = {var: idx for idx, var in enumerate(self.variables)}
         self.root = self._build_recursive(expression)
         if reduce: self.reduce()
         return self
@@ -98,8 +102,10 @@ class ROBDD:
             if key in self.operation_cache:
                 return self.operation_cache[key]
             
-            # Directly compare variable indices
-            var = min(n1.var, n2.var, key=lambda x: self.variables.index(x) if x in self.variables else float('inf'))
+          # Use the pre-computed indices for faster comparison
+            idx1 = self.variable_indices.get(n1.var, float('inf'))
+            idx2 = self.variable_indices.get(n2.var, float('inf'))
+            var = n1.var if idx1 <= idx2 else n2.var
             
             low1, high1 = (n1.low, n1.high) if var == n1.var else (n1, n1)
             low2, high2 = (n2.low, n2.high) if var == n2.var else (n2, n2)
@@ -113,12 +119,10 @@ class ROBDD:
     
         return apply_recursive(g1, g2)
 
-
-    def reduce(self):
+    def reduce(self, show_ones=False):
         self.root = self._reduce_recursive(self.root)
         self._clean_unique_table()
 
-    # TODO:
     @lru_cache(maxsize=None, typed=False)
     def _reduce_recursive(self, node):
         if node is None or node.terminal:
@@ -172,7 +176,7 @@ class ROBDD:
                 node = node.low
         
         return node.var
-        
+    
 
     
     def show(self):
@@ -267,7 +271,10 @@ class ROBDD:
             return
 
         def print_recursive(node, prefix="", is_left=True):
-            if node.var in ('0', '1'):  # Terminal node
+            if node is None:
+                return
+            
+            if node.var in (0, 1):  # Terminal node
                 print(f"{prefix}{'└── ' if is_left else '┌── '}[{node.var}]")
                 return
 
@@ -283,62 +290,83 @@ class ROBDD:
 
         print_recursive(self.root, "", True)
 
+    def find_paths_to_one(self):
+        paths = []
+        self._find_paths_to_one_recursive(self.root, {}, paths)
+        return paths
 
-def debug_show_ones(expression, variables):
+    def _find_paths_to_one_recursive(self, node, current_path, paths):
+        if node is None:
+            return
+        if node.terminal:
+            if node.var == 1:
+                paths.append(current_path.copy())
+            return
+
+        # Explore the high branch (variable is True)
+        current_path[node.var] = True
+        self._find_paths_to_one_recursive(node.high, current_path, paths)
+
+        # Explore the low branch (variable is False)
+        current_path[node.var] = False
+        self._find_paths_to_one_recursive(node.low, current_path, paths)
+
+        # Remove the current variable from the path
+        del current_path[node.var]
+
+    def get_complete_assignments_to_one(self):
+        partial_paths = self.find_paths_to_one()
+        all_vars = self.variables  # Use the ordered list of variables
+        complete_assignments = []
+
+        for partial_path in partial_paths:
+            unassigned_vars = [var for var in all_vars if var not in partial_path]
+            unassigned_combinations = product([False, True], repeat=len(unassigned_vars))
+
+            for combination in unassigned_combinations:
+                complete_assignment = partial_path.copy()
+                complete_assignment.update(zip(unassigned_vars, combination))
+                complete_assignments.append(complete_assignment)
+
+        return complete_assignments
+
+
+
+def main():
+    # Create an ROBDD instance
     robdd = ROBDD()
+
+    # Define a more complex boolean expression
+    # (A AND B) OR (NOT C AND D) OR (E AND F AND G) OR (H AND NOT I)
+    expression = ('or',
+                  ('and', 'A', 'B'),
+                  ('and', ('not', 'C'), 'D'),
+                  ('and', 'E', 'F', 'G'),
+                  ('and', 'H', ('not', 'I'))
+                 )
+    variables = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I']
+
+    # Build the ROBDD
     robdd.build(expression, variables)
-    
-    print("Non-reduced ROBDD show_ones:")
-    robdd.show_ones(use_reduced=False)
-    
-    print("\nReduced ROBDD show_ones:")
-    robdd.show_ones(use_reduced=True)
 
-## Example usage
-#expression = ('or', ('and', 'x', ('not', 'y')), ('and', ('and', 'y', 'z'), ('not', 'x')), ('and', 'w', ('not', 'z')))
-#variables = ['x', 'y', 'z', 'w']
-#
-#
-#expression = (
-#    'or',
-#    ('and', 'x1', ('not', 'x2')),
-#    ('and', ('or', 'x3', ('not', 'x4')), ('and', 'x5', ('not', 'x6'))),
-#    ('or', 
-#        ('and', 'x7', ('not', 'x8')),
-#        ('and', ('or', 'x9', ('not', 'x10')), ('and', 'x11', ('not', 'x12')))
-#    ),
-#    ('and', 
-#        ('or', 'x13', ('not', 'x14')),
-#        ('and', ('or', 'x15', ('not', 'x16')), ('and', 'x17', ('not', 'x18')))
-#    ),
-#    ('or', 
-#        ('and', 'x19', ('not', 'x20')),
-#        ('and', ('or', 'x21', ('not', 'x22')), ('and', 'x23', ('not', 'x24')))
-#    ),
-#    ('and', 
-#        ('or', 'x25', ('not', 'x26')),
-#        ('and', ('or', 'x27', ('not', 'x28')), ('and', 'x29', ('not', 'x30')))
-#    )
-#)
-#variables = [f'x{i}' for i in range(1, 24)]
-#
-#
-#debug_show_ones(expression, variables)
+    # Print the normal reduced ROBDD
+    print("Normal Reduced ROBDD:")
+    robdd.reduce()
+    robdd.print_robdd()
+    print("\n")
 
+    # Print paths leading to 1
+    print("Partial paths leading to 1:")
+    paths = robdd.find_paths_to_one()
+    for path in paths:
+        print(" ".join(f"{var}={int(value)}" for var, value in sorted(path.items())))
+    print("\n")
 
-#if __name__=="__main__":
-#    test_case_4 = ('or', 'x', 'y', 'z')
-#    variables_4 = ['x', 'y', "z"]
-#    expression = (
-#        'or',
-#        ('and', 'x', ('not', 'y')),
-#        ('and', ('and', 'y', 'z'), ('not', 'x')),
-#        ('and', 'w', ('not', 'z'))
-#    )
-#    variables = ['x', 'y', 'z', 'w']
-#
-#    #print("Test Case 4:", test_case_4)
-#    robdd = ROBDD()
-#    robdd.build(expression, variables, reduce=False)
-#    print()
-#    robdd.show_ones()
+    # Print all complete assignments leading to 1
+    print("Complete assignments leading to 1:")
+    complete_assignments = robdd.get_complete_assignments_to_one()
+    for assignment in complete_assignments:
+        print(" ".join(f"{var}={int(value)}" for var, value in sorted(assignment.items())))
+
+if __name__ == "__main__":
+    main()

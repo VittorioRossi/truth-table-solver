@@ -53,7 +53,7 @@ class CodeInterpreter:
                 self._show_lazy(output_vars_list)
             elif instruction_type == "show_ones":
 
-                self._show_ones_lazy(output_vars_list)
+                self._show_ones(output_vars_list)
             else:
                 raise ValueError("Invalid instruction type")
 
@@ -63,16 +63,38 @@ class CodeInterpreter:
         # _ takes in the show or show_ones and the name of the variable is in name
         # we take the assignment corresponding to the name and build the robdd
         # so we can evaluate it later
-        for _, names in self.show_instructions:
+        for show_type, names in self.show_instructions:
             for name in names:
                 expr = self.assignments[name]
-                self.trees[name] = robdd.build(expr, self.variables, reduce=reduce)
+                self.trees[name] = robdd.build(expr, self.variables, reduce=False)
+                # we reduce the tree with the show_ones flag if showing ones otherwise we normally reduce
+                self.trees[name].reduce(show_type == 'show_ones') 
         
     def _show(self):
         return
     
-    def _show_ones(self):
-        return
+
+    def _show_ones(self, output_vars_list):
+        all_vars = self.variables  # Use the original order of variables
+        
+        print(self._create_header(all_vars, output_vars_list))
+
+        # Get assignments leading to one for all output variables
+        all_assignments = set()
+        for output_var in output_vars_list:
+            one_assignments = self.trees[output_var].get_complete_assignments_to_one()
+            all_assignments.update(tuple((var, assignment[var]) for var in all_vars) for assignment in one_assignments)
+
+        # Convert back to dictionaries and sort based on the original variable order
+        all_assignments = [dict(assignment) for assignment in all_assignments]
+        all_assignments.sort(key=lambda x: tuple(x[var] for var in all_vars))
+
+        # Print the assignments
+        for assignment in all_assignments:
+            output_results = [self.trees[var].evaluate(assignment) for var in output_vars_list]
+            print(self._create_line(assignment, output_results))
+
+
 
     # blindly evaluates all assignments regardless of the expression 
     # form and then passes those to the evaluate to perform computations
