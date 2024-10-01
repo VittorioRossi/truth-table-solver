@@ -1,98 +1,88 @@
 from functools import lru_cache
-from time import time
-
+from typing import List
 # Define constants for operators
 OP_NOT = 'not'
 OP_AND = 'and'
 OP_OR = 'or'
 
+def op_not(x:int, y:int) -> int:
+    return 1 if not x else 0
+
+def op_and(x:int, y:int):
+    return 1 if x and y else 0
+
+def op_or(x:int, y:int):
+    return 1 if x or y else 0
+
+OPERATIONS = {
+    OP_NOT: op_not,
+    OP_AND: op_and,
+    OP_OR: op_or
+}
+
 class Node:
-    _id_counter = 0
-    __slots__ = ['var', 'low', 'high', 'id']
+    __slots__ = ['var', 'low', 'high', 'terminal']
+
     def __init__(self, var, low, high):
-        self.var = var
-        self.low = low
-        self.high = high
-        self.id = Node._id_counter
-        Node._id_counter += 1
+        self.var: int | str = var
+        self.low: Node = low
+        self.high: Node = high
+        self.terminal: bool = var in (0, 1)
 
-    @classmethod
-    def reset_id_counter(cls):
-        cls._id_counter = 0
-
-    def is_terminal(self):
-        return self.low is None and self.high is None
-
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"Node({self.var})"
-    
 
-def op_not(x, y):
-    return '1' if x == '0' else '0'
-
-def op_and(x, y):
-    return '1' if x == '1' and y == '1' else '0'
-
-def op_or(x, y):
-    return '1' if x == '1' or y == '1' else '0'
 
 class ROBDD:
     __slots__ = ['root', 'variables', 'operation_cache', 'unique_table']
+
     def __init__(self):
-        self.root = None
-        self.variables = []
-        self.unique_table = {}
-        self.operation_cache = {}
-        Node.reset_id_counter()
+        self.root: Node = None
+        self.variables: List[str] = []
+        self.unique_table: dict = {}
+        self.operation_cache: dict = {}
 
     def clear(self):
         self.root = None
         self.variables = []
         self.operation_cache = {}
         self.unique_table = {}
-        Node.reset_id_counter()
 
-    def build(self, expression, variables):
+
+    def build(self, expression, variables, reduce=True):
         self.clear()
         self.variables = variables
-
-        time1 = time()
         self.root = self._build_recursive(expression)
-        print(f"Build time: {time() - time1:.2f}s")
-
-        time2 = time()
-        self.reduce()
-        print(f"Reduce time: {time() - time2:.2f}s")
+        if reduce: self.reduce()
         return self
     
     @lru_cache(maxsize=None, typed=False)
     def _build_recursive(self, expression):
         # Base cases
         if isinstance(expression, str):
+            # if the expression is a varaible then the node is a terminal node
             if expression in self.variables:
-                return self.mk(expression, self.mk('0', None, None), self.mk('1', None, None))
+                return self.mk(expression, self.mk(0, None, None), self.mk(1, None, None))
             elif expression in ('True', 'False'):
-                return self.mk('1' if expression == 'True' else '0', None, None)
+                return self.mk(1 if expression == 'True' else 0, None, None)
             else:
                 raise ValueError(f"Unknown variable or constant: {expression}")
         
-        # Recursive cases
-        elif isinstance(expression, tuple):
-            op = expression[0]
-            if op == 'not':
-                sub_node = self._build_recursive(expression[1])
-                return self.apply(op_not, sub_node, sub_node)
-            elif op in ('and', 'or'):
-                result = self._build_recursive(expression[1])
-                for sub_expr in expression[2:]:
-                    sub_node = self._build_recursive(sub_expr)
-                    result = self.apply(op_and if op == 'and' else op_or, result, sub_node)
-                return result
-            else:
-                raise ValueError(f"Unknown operation: {expression}")
-        else:
-            raise ValueError(f"Invalid expression type: {type(expression)}")
+        # if the expression is a tuple then it is a logical operation with
+        # the first element being the operator and the rest being the operands
+        op = expression[0]
+    
+        
+        result = self._build_recursive(expression[1])
+        if op == 'not':
+            return self.apply(op_not, result, result)
 
+        for sub_expr in expression[2:]:
+            sub_node = self._build_recursive(sub_expr)
+            result = self.apply(OPERATIONS[op], result, sub_node)
+        
+        return result
+    
     def mk(self, var, low, high):
         key = (var, id(low), id(high))
         if key not in self.unique_table:
@@ -101,13 +91,14 @@ class ROBDD:
 
     def apply(self, op, g1, g2):
         def apply_recursive(n1, n2):
-            if n1.is_terminal() and n2.is_terminal():
+            if n1.terminal and n2.terminal:
                 return self.mk(op(n1.var, n2.var), None, None)
             
             key = (id(n1), id(n2), op)
             if key in self.operation_cache:
                 return self.operation_cache[key]
             
+            # Directly compare variable indices
             var = min(n1.var, n2.var, key=lambda x: self.variables.index(x) if x in self.variables else float('inf'))
             
             low1, high1 = (n1.low, n1.high) if var == n1.var else (n1, n1)
@@ -127,8 +118,10 @@ class ROBDD:
         self.root = self._reduce_recursive(self.root)
         self._clean_unique_table()
 
+    # TODO:
+    @lru_cache(maxsize=None, typed=False)
     def _reduce_recursive(self, node):
-        if node is None or node.is_terminal():
+        if node is None or node.terminal:
             return node
 
         low = self._reduce_recursive(node.low)
@@ -137,96 +130,215 @@ class ROBDD:
         if low == high:
             return low
 
-        if low.is_terminal() and high.is_terminal() and low.var == high.var:
+        if low.terminal and high.terminal and low.var == high.var:
             return low
 
         return self.mk(node.var, low, high)
+
+
 
     def _clean_unique_table(self):
         new_unique_table = {}
         self._mark_reachable_nodes(self.root, new_unique_table)
         self.unique_table = new_unique_table
 
+
+    # TODO: This is a bit of a hack, we should probably use a proper graph traversal algorithm to mark all reachable nodes
     def _mark_reachable_nodes(self, node, new_table):
         if node is None or node in new_table.values():
             return
-        if not node.is_terminal():
+        if not node.terminal:
             key = (node.var, id(node.low), id(node.high))
             new_table[key] = node
             self._mark_reachable_nodes(node.low, new_table)
             self._mark_reachable_nodes(node.high, new_table)
 
-    def __call__(self, var_assignment):
+
+    def evaluate(self, var_assignment:dict) -> int:
+        """
+        Inputs:
+            var_assignment: dict, a dictionary with the variable name and the assigned value
+        Outputs:
+            int, the result of the evaluation of the ROBDD. Either 0 or 1
+        """
         node = self.root
+        # Create a closure to get the assigned value for a variable
         get = var_assignment.get
-        while not node.is_terminal():
+        while not node.terminal:
             # extract what the assigned value for the current node is
             if get(node.var):
                 node = node.high # go to the high branch if the value is True
             else:
                 node = node.low
+        
         return node.var
-    
-    def find_paths_to_one(self, node, path=None, assignments=None):
-        if path is None:
-            path = []
-        if assignments is None:
-            assignments = []
         
-        if node is None:
-            return assignments
 
-        if node.var == 1:
-            # We've reached a terminal 1 node, add this path to assignments
-            assignments.append(path)
-            return assignments
-        elif node.var == 0:
-            # We've reached a terminal 0 node, this path doesn't lead to 1
-            return assignments
-        
-        # Recursive case: non-terminal node
-        # Follow high branch (var = True)
-        self.find_paths_to_one(node.high, path + [(node.var, True)], assignments)
-        
-        # Follow low branch (var = False)
-        self.find_paths_to_one(node.low, path + [(node.var, False)], assignments)
-        
-        return assignments
     
-    def show_ones(self, declared_vars):
-        """
-        Generate truth table rows for satisfying assignments.
-        """
-        satisfying_assignments = self.find_paths_to_one(self.root)
-        print(f"Number of satisfying assignments: {len(satisfying_assignments)}")
-        print("Satisfying assignments:")
-        for assignment in satisfying_assignments:
-            print(assignment)
+    def show(self):
+        if self.root is None:
+            raise ValueError("ROBDD is empty. Build a ROBDD first.")
 
-        rows = []
-        for assignment in satisfying_assignments:
-            row = [str(int(assignment.get(var, False))) for var in declared_vars]
-            rows.append(" ".join(row))
+        print(" ".join(self.variables) + " | Result")
+        print("-" * (len(self.variables) * 2 + 8))
+        self._show_recursive(self.root, {}, 0)
+
+    def _show_recursive(self, node, assignment, var_index):
+        if var_index == len(self.variables):
+            # We've assigned all variables, evaluate the ROBDD
+            result = self._evaluate(self.root, assignment)
+            assignment_str = " ".join(str(int(assignment[var])) for var in self.variables)
+            print(f"{assignment_str} | {result}")
+            return
+
+        # Assign 0 to the current variable
+        assignment[self.variables[var_index]] = False
+        self._show_recursive(node, assignment, var_index + 1)
+
+        # Assign 1 to the current variable
+        assignment[self.variables[var_index]] = True
+        self._show_recursive(node, assignment, var_index + 1)
+
+        # Backtrack
+        del assignment[self.variables[var_index]]
+
+    def _evaluate(self, node, assignment):
+        while not node.terminal:
+            if assignment[node.var]:
+                node = node.high
+            else:
+                node = node.low
+        return node.var
+
+
+    def show_ones(self):
+        print(" ".join(self.variables))
+        print("-" * (len(self.variables) * 2 - 1))
+        self._show_ones_recursive(self.root, {}, 0, debug_level=0)
+
+
+    def _show_ones_recursive(self, node, assignment, var_index, debug_level=0):
+#        indent = "  " * debug_level
+#        print(f"{indent}Visiting node: {node.var}, var_index: {var_index}")
         
-        return rows
+        if node.var == '1':
+#            print(f"{indent}Found 1-terminal, printing assignment:")
+            self._print_assignments(assignment, var_index)
+            return
+        if node.var == '0':
+#            print(f"{indent}Found 0-terminal, backtracking")
+            return
+
+        current_var_index = self.variables.index(node.var)
+#        print(f"{indent}Current variable: {node.var}, index: {current_var_index}")
+
+        # Handle skipped variables
+        for i in range(var_index, current_var_index):
+#            print(f"{indent}Assigning 0 to skipped variable: {self.variables[i]}")
+            assignment[self.variables[i]] = 0
+        
+#        print(f"{indent}Exploring low branch (0) for {node.var}")
+        assignment[node.var] = 0
+        self._show_ones_recursive(node.low, assignment, current_var_index + 1, debug_level + 1)
+
+        #print(f"{indent}Exploring high branch (1) for {node.var}")
+        assignment[node.var] = 1
+        self._show_ones_recursive(node.high, assignment, current_var_index + 1, debug_level + 1)
+
+#        print(f"{indent}Backtracking: removing assignments from {var_index} to {current_var_index}")
+        for i in range(var_index, current_var_index + 1):
+            del assignment[self.variables[i]]
+
+    def _print_assignments(self, assignment, start_index):
+        if start_index == len(self.variables):
+            print(" ".join(str(int(assignment.get(var, 0))) for var in self.variables))
+            return
+
+        assignment[self.variables[start_index]] = 0
+        self._print_assignments(assignment, start_index + 1)
+        assignment[self.variables[start_index]] = 1
+        self._print_assignments(assignment, start_index + 1)
+        del assignment[self.variables[start_index]]
     
     def print_robdd(self):
-        print("ROBDD:")
-        def print_recursive(node, indent=0):
-            print("  " * indent + str(node))
-            if not node.is_terminal():
-                print_recursive(node.low, indent + 1)
-                print_recursive(node.high, indent + 1)
+        print("ROBDD Structure:")
+        if self.root is None:
+            print("Empty ROBDD")
+            return
 
-        print_recursive(self.root)
+        def print_recursive(node, prefix="", is_left=True):
+            if node.var in ('0', '1'):  # Terminal node
+                print(f"{prefix}{'└── ' if is_left else '┌── '}[{node.var}]")
+                return
+
+            print(f"{prefix}{'└── ' if is_left else '┌── '}{node.var}")
+
+            new_prefix = prefix + ("    " if is_left else "│   ")
+
+            # Print the high branch first (going right in the visualization)
+            print_recursive(node.high, new_prefix, False)
+            
+            # Then print the low branch
+            print_recursive(node.low, new_prefix, True)
+
+        print_recursive(self.root, "", True)
 
 
-if __name__=="__main__":
-    test_case_4 = ('or', 'x', 'y', 'z')
-    variables_4 = ['x', 'y', "z"]
-
-    #print("Test Case 4:", test_case_4)
+def debug_show_ones(expression, variables):
     robdd = ROBDD()
-    robdd.build(test_case_4, variables_4)
-    robdd.show_ones(variables_4)
-    robdd.print_robdd()
+    robdd.build(expression, variables)
+    
+    print("Non-reduced ROBDD show_ones:")
+    robdd.show_ones(use_reduced=False)
+    
+    print("\nReduced ROBDD show_ones:")
+    robdd.show_ones(use_reduced=True)
+
+## Example usage
+#expression = ('or', ('and', 'x', ('not', 'y')), ('and', ('and', 'y', 'z'), ('not', 'x')), ('and', 'w', ('not', 'z')))
+#variables = ['x', 'y', 'z', 'w']
+#
+#
+#expression = (
+#    'or',
+#    ('and', 'x1', ('not', 'x2')),
+#    ('and', ('or', 'x3', ('not', 'x4')), ('and', 'x5', ('not', 'x6'))),
+#    ('or', 
+#        ('and', 'x7', ('not', 'x8')),
+#        ('and', ('or', 'x9', ('not', 'x10')), ('and', 'x11', ('not', 'x12')))
+#    ),
+#    ('and', 
+#        ('or', 'x13', ('not', 'x14')),
+#        ('and', ('or', 'x15', ('not', 'x16')), ('and', 'x17', ('not', 'x18')))
+#    ),
+#    ('or', 
+#        ('and', 'x19', ('not', 'x20')),
+#        ('and', ('or', 'x21', ('not', 'x22')), ('and', 'x23', ('not', 'x24')))
+#    ),
+#    ('and', 
+#        ('or', 'x25', ('not', 'x26')),
+#        ('and', ('or', 'x27', ('not', 'x28')), ('and', 'x29', ('not', 'x30')))
+#    )
+#)
+#variables = [f'x{i}' for i in range(1, 24)]
+#
+#
+#debug_show_ones(expression, variables)
+
+
+#if __name__=="__main__":
+#    test_case_4 = ('or', 'x', 'y', 'z')
+#    variables_4 = ['x', 'y', "z"]
+#    expression = (
+#        'or',
+#        ('and', 'x', ('not', 'y')),
+#        ('and', ('and', 'y', 'z'), ('not', 'x')),
+#        ('and', 'w', ('not', 'z'))
+#    )
+#    variables = ['x', 'y', 'z', 'w']
+#
+#    #print("Test Case 4:", test_case_4)
+#    robdd = ROBDD()
+#    robdd.build(expression, variables, reduce=False)
+#    print()
+#    robdd.show_ones()

@@ -51,11 +51,11 @@ class Tokenizer:
                     continue
                 
                 # Handle unexpected characters
-                raise ValueError(f"Unexpected character: {char} at line {line_num}, column {i + 1}")
+                raise ValueError(f"Unexpected character: {char} at line {line_num}, character {i + 1}")
 
         # Check for the final semicolon
         if len(tokens) == 0 or tokens[-1].value != ';':
-            raise ValueError("Expected ';' at the end of the program")
+            raise ValueError("Expected ';' at the end of the line")
 
         return tokens
 

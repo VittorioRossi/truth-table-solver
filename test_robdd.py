@@ -1,57 +1,161 @@
-from project.parser import parse
+import unittest
+from io import StringIO
+import sys
 from project.ROBDD import ROBDD
 
-def test_robdd():
-    with open('./hw01_instances/ag10_00.txt') as f:
-        file_content = f.read()
+class TestROBDD(unittest.TestCase):
 
-    variables, assignments, show_instructions = parse("var x y; z = y and x;show z;")
-    # Assume 'file_content' contains the input text
-    print(assignments)
-    robdd = ROBDD()
-    for var_name, expression in assignments.items():
-        robdd.build(expression, variables)
+    def setUp(self):
+        self.robdd = ROBDD()
+        self.captured_output = StringIO()
+        sys.stdout = self.captured_output
 
-        print(var_name)
-        print(robdd.root)
+    def tearDown(self):
+        sys.stdout = sys.__stdout__
 
-def test_robdd_reduction(expression, variables):
-    robdd = ROBDD()
-    result = robdd.build(expression, variables)
-    print(f"Expression: {expression}")
-    print(f"Reduced ROBDD: {result.root}")
-    print()
+    def assert_output(self, expected_output):
+        self.assertEqual(self.captured_output.getvalue().strip(), expected_output.strip())
 
-def test_robdd_reduction_test_cases():
-    # Test Case 1: (a AND b) OR (NOT a AND c)
-    test_case_1 = ('or', ('and', 'a', 'b'), ('and', ('not', 'a'), 'c'))
-    variables_1 = ['a', 'b', 'c']
+    def test_simple_or(self):
+        self.robdd.build(('or', 'x', 'y'), ['x', 'y'])
+        self.robdd.show()
+        expected_output = """
+        x y | Result
+        -------------
+        0 0 | 0
+        0 1 | 1
+        1 0 | 1
+        1 1 | 1
+        """
+        self.assert_output(expected_output)
 
-    # Test Case 2: (a OR b) AND (b OR c) AND (c OR a)
-    test_case_2 = ('and', ('or', 'a', 'b'), ('and', ('or', 'b', 'c'), ('or', 'c', 'a')))
-    variables_2 = ['a', 'b', 'c']
+    def test_complex_expression(self):
+        expr = ('and', ('or', 'a', 'b'), ('not', ('and', 'c', 'd')))
+        self.robdd.build(expr, ['a', 'b', 'c', 'd'])
+        self.robdd.show()
+        # Add expected output here
 
-    # Test Case 3: (w AND x) OR (NOT y AND z) OR (w AND NOT z)
-    test_case_3 = ('or', ('and', 'w', 'x'), ('or', ('and', ('not', 'y'), 'z'), ('and', 'w', ('not', 'z'))))
-    variables_3 = ['w', 'x', 'y', 'z']
+    def test_all_variables_true(self):
+        expr = ('and', 'x', 'y', 'z')
+        self.robdd.build(expr, ['x', 'y', 'z'])
+        self.robdd.show_ones()
+        expected_output = """
+        x y z
+        -----
+        1 1 1
+        """
+        self.assert_output(expected_output)
 
-    #test xor
-    test_case_4 = ('and', ('or', 'x', 'y', ('not', ('and', 'x', 'y'))))
-    variables_4 = ['x', 'y']
+    def test_always_true(self):
+        self.robdd.build('True', [])
+        self.robdd.show()
+        expected_output = """
+        Result
+        ------
+        1
+        """
+        self.assert_output(expected_output)
 
+    def test_always_false(self):
+        self.robdd.build('False', [])
+        self.robdd.show()
+        expected_output = """
+        Result
+        ------
+        0
+        """
+        self.assert_output(expected_output)
 
-    # Run the tests
-    print("Test Case 1:")
-    test_robdd_reduction(test_case_1, variables_1)
+    def test_single_variable(self):
+        self.robdd.build('x', ['x'])
+        self.robdd.show()
+        expected_output = """
+        x | Result
+        ---------
+        0 | 0
+        1 | 1
+        """
+        self.assert_output(expected_output)
 
-    print("Test Case 2:")
-    test_robdd_reduction(test_case_2, variables_2)
+    def test_many_variables(self):
+        vars = [f'x{i}' for i in range(10)]
+        expr = ('or',) + tuple(vars)
+        self.robdd.build(expr, vars)
+        self.robdd.show_ones()
+        # Check that the output has 2^10 - 1 lines (all combinations except all False)
 
-    print("Test Case 3:")
-    test_robdd_reduction(test_case_3, variables_3)
+    def test_nested_not(self):
+        expr = ('not', ('not', ('not', 'x')))
+        self.robdd.build(expr, ['x'])
+        self.robdd.show()
+        expected_output = """
+        x | Result
+        ---------
+        0 | 1
+        1 | 0
+        """
+        self.assert_output(expected_output)
 
-    print("Test Case 4:")
-    test_robdd_reduction(test_case_4, variables_4)
+    def test_xor(self):
+        expr = ('or', ('and', 'x', ('not', 'y')), ('and', ('not', 'x'), 'y'))
+        self.robdd.build(expr, ['x', 'y'])
+        self.robdd.show()
+        expected_output = """
+        x y | Result
+        -------------
+        0 0 | 0
+        0 1 | 1
+        1 0 | 1
+        1 1 | 0
+        """
+        self.assert_output(expected_output)
 
-if __name__ == "__main__":
-    test_robdd_reduction_test_cases()
+    def test_empty_robdd(self):
+        with self.assertRaises(ValueError):
+            self.robdd.show()
+
+    def test_large_expression(self):
+        vars = [f'x{i}' for i in range(20)]
+        expr = ('and', ('or',) + tuple(vars[:10]), ('or',) + tuple(vars[10:]))
+        self.robdd.build(expr, vars)
+        self.robdd.show_ones()
+        # Check that the output is not empty and has the correct format
+
+    def test_all_operators(self):
+        expr = ('or', ('and', 'a', 'b'), ('not', 'c'), ('or', 'd', 'e'))
+        self.robdd.build(expr, ['a', 'b', 'c', 'd', 'e'])
+        self.robdd.show()
+        # Add expected output here
+
+    def test_redundant_variables(self):
+        expr = ('or', 'x', 'x')
+        self.robdd.build(expr, ['x', 'y'])  # 'y' is redundant
+        self.robdd.show()
+        expected_output = """
+        x y | Result
+        -------------
+        0 0 | 0
+        0 1 | 0
+        1 0 | 1
+        1 1 | 1
+        """
+        self.assert_output(expected_output)
+
+    def test_constant_in_expression(self):
+        expr = ('and', 'x', 'True', ('or', 'y', 'False'))
+        self.robdd.build(expr, ['x', 'y'])
+        self.robdd.show()
+        # Add expected output here
+
+    def test_show_ones_all_false(self):
+        expr = ('and', 'x', ('not', 'x'))
+        self.robdd.build(expr, ['x'])
+        self.robdd.show_ones()
+        expected_output = """
+        x
+        -
+        """
+        self.assert_output(expected_output)
+
+if __name__ == '__main__':
+    unittest.main()
